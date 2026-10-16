@@ -1,0 +1,18 @@
+{
+  "name": "husboken",
+  "version": "0.1.0",
+  "description": "Husboken - keep track of home, garden, renovation and building projects.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}

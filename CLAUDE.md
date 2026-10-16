@@ -23,8 +23,9 @@ In scope:
 5. Attachments per project: photos and drawings uploaded as image or PDF files,
    shown in a gallery.
 6. Contacts per project (name, role, phone, email, comment).
-7. Responsive, mobile-friendly UI, installable as a PWA (add to home screen).
-8. Deployed to a public URL.
+7. User-selectable UI language: Swedish or English (see "UI language" below).
+8. Responsive, mobile-friendly UI, installable as a PWA (add to home screen).
+9. Deployed to a public URL.
 
 Out of scope for now: in-browser drawing tool, sharing projects between users,
 full-text search, offline mode, native mobile apps.
@@ -38,6 +39,7 @@ full-text search, offline mode, native mobile apps.
 | UI | Vanilla JavaScript + HTML templates | No UI framework; small, explicit view modules. |
 | Styling | Plain CSS (CSS custom properties, flexbox/grid) | Mobile-first responsive layout. |
 | Routing | Small hash-based router (`#/projects/42`) | Works on any static host without server config. |
+| Internationalisation | Own small i18n module (`src/i18n/`) with Swedish and English dictionaries | User-selectable UI language, no extra dependency. |
 | Backend-as-a-service | Supabase | Hosted backend, no server code of our own. |
 | Authentication | Supabase Auth (email + password) | Personal login per user, session handling. |
 | Database | Supabase Postgres + Row Level Security (RLS) | Stores projects, notes, measurements, contacts, attachment metadata. RLS enforces per-user access. |
@@ -61,9 +63,11 @@ flowchart LR
     subgraph Client["User device (desktop or mobile browser / PWA)"]
         UI["Views<br/>(HTML + CSS)"]
         Router["Hash router"]
+        I18n["i18n module<br/>sv.js / en.js"]
         Services["Service modules<br/>auth_service.js<br/>project_service.js<br/>attachment_service.js ..."]
         SDK["supabase-js client"]
         UI --> Router
+        UI --> I18n
         UI --> Services
         Services --> SDK
     end
@@ -103,10 +107,34 @@ flowchart LR
 6. Attachments are listed from the `attachments` table; images are shown via short-lived
    signed URLs from Storage.
 
+### UI language
+
+The user chooses between Swedish (`sv`) and English (`en`) with a language
+selector in the header, available both before and after login.
+
+- All UI text is looked up with `t("key")` from `src/i18n/i18n.js`. No user-facing
+  string is ever hard-coded in a view or component.
+- Translations live in `src/i18n/locales/sv.js` and `src/i18n/locales/en.js`.
+  **Every key must exist in both files.** Keys are dot-separated and grouped by
+  area: `auth.*`, `projects.*`, `project_type.*`, `project_status.*`, `errors.*`, ...
+- Placeholders use `{name}` syntax: `t("projects.updated", { date })`.
+- Missing keys fall back to Swedish, then to the key itself (so gaps are visible).
+- The choice is stored in `localStorage` (`husboken.language`). On first visit the
+  browser language is used if it is `sv` or `en`, otherwise Swedish.
+- Changing language re-renders the current page via `on_language_change()` and sets
+  `<html lang>`.
+- Dates are formatted with `format_date()` using the selected locale.
+- Database values (project type, status, measurement units) are stored as
+  language-neutral codes (e.g. `in_progress`) and translated only for display.
+  User-entered content (names, notes) is never translated.
+- Supabase error messages are shown via `error_message()`, which maps known error
+  codes to translated texts and otherwise falls back to Supabase's own message.
+
 ### Data model
 
 All tables have `id bigint generated always as identity primary key`,
-`created_at timestamptz default now()` and RLS enabled.
+`created_at timestamptz default now()`, `updated_at` (kept current by a trigger)
+and RLS enabled. Changes to child rows bump the parent project's `updated_at`.
 
 | Table | Key columns |
 |---|---|
@@ -117,7 +145,10 @@ All tables have `id bigint generated always as identity primary key`,
 | `attachments` | `project_id`, `owner_id`, `kind` (`photo` / `drawing`), `storage_path`, `file_name`, `mime_type`, `caption` |
 
 RLS policy pattern for every table: select/insert/update/delete allowed only when
-`owner_id = auth.uid()`. `owner_id` defaults to `auth.uid()`.
+`owner_id = auth.uid()`. `owner_id` defaults to `auth.uid()`, so the frontend never
+sends it. Child tables additionally require that `project_id` points to one of the
+user's own projects, and `attachments.storage_path` must start with the user's id.
+The `anon` role has no table privileges at all.
 
 Storage policy: a user may read and write objects only where the first path
 segment equals their user id (`(storage.foldername(name))[1] = auth.uid()::text`).
@@ -139,6 +170,11 @@ husboken/
 │   ├── main.js             # entry point: init client, auth listener, router
 │   ├── supabase_client.js  # creates the single supabase-js client
 │   ├── router.js
+│   ├── i18n/
+│   │   ├── i18n.js         # t(), set_language(), format_date()
+│   │   └── locales/
+│   │       ├── sv.js       # Swedish texts
+│   │       └── en.js       # English texts (same keys as sv.js)
 │   ├── services/           # all Supabase calls live here, nowhere else
 │   │   ├── auth_service.js
 │   │   ├── project_service.js
@@ -150,13 +186,16 @@ husboken/
 │   │   ├── login_view.js
 │   │   ├── project_list_view.js
 │   │   └── project_detail_view.js
-│   ├── components/         # reusable UI pieces (forms, gallery, dialogs)
+│   ├── components/         # reusable UI pieces
+│   │   ├── dom.js          # el() / replace_content(): safe element builders
+│   │   ├── language_switcher.js
+│   │   └── messages.js     # error_message(): translated error texts
 │   └── styles/
 │       └── main.css
 └── supabase/
-    ├── config.toml
+    ├── config.toml         # created by `npx supabase init`
     └── migrations/
-        └── <timestamp>_initial_schema.sql
+        └── 20261016120000_initial_schema.sql
 ```
 
 ## Commands
@@ -220,14 +259,16 @@ npx supabase db push                  # apply migrations to the remote database
   user-facing error messages.
 - **Error handling**: always check the `error` returned by supabase-js. Show a
   readable message to the user; never fail silently.
-- **Security**: never build HTML from user input with `innerHTML`. Use
-  `textContent` or create elements with `document.createElement` to avoid XSS.
+- **Security**: never build HTML from user input with `innerHTML`. Use the `el()`
+  helper from `components/dom.js` (or `textContent`) to avoid XSS.
 - **Async**: use `async`/`await`, not `.then()` chains.
 - **Style**: 4-space indentation, double quotes, semicolons, `const` by default and
   `let` only when reassigned, never `var`.
 - **Database**: every schema change is a new migration file; never edit an applied
   migration. Every new table gets RLS enabled and owner policies in the same migration.
-- **Language**: code, comments and commit messages in English. UI text in Swedish.
+- **Language**: code, comments and commit messages in English. UI text is
+  user-selectable Swedish or English: always add new texts as keys in **both**
+  `sv.js` and `en.js` and use `t("key")` in code.
 
 ## Working agreements for Claude
 
@@ -236,3 +277,4 @@ npx supabase db push                  # apply migrations to the remote database
 - When introducing a JavaScript concept that has no direct C/C++ equivalent, add a
   short explanatory comment.
 - Test RLS by checking that a second user cannot see the first user's data.
+- Check new UI in both languages and at mobile width (about 375 px).
