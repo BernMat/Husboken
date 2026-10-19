@@ -2,6 +2,7 @@
 
 :root {
     --color_bg: #f6f4ef;
+    --color_bg_overlay: rgba(246, 244, 239, 0.35);
     --color_surface: #ffffff;
     --color_text: #1f2a26;
     --color_muted: #5f6b66;
@@ -13,6 +14,10 @@
     --color_planned: #e8e3d6;
     --color_in_progress: #f3dfb1;
     --color_done: #cfe6d3;
+    --color_wood: #efe3c6;
+    --color_wood_edge: #d9c8a0;
+    --color_wood_text: #4a3f2a;
+    --color_glass: rgba(255, 255, 255, 0.9);
     --radius: 10px;
     --space: 16px;
     --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -21,6 +26,7 @@
 @media (prefers-color-scheme: dark) {
     :root {
         --color_bg: #141917;
+        --color_bg_overlay: rgba(20, 25, 23, 0.55);
         --color_surface: #1e2522;
         --color_text: #e8ece9;
         --color_muted: #a3aea9;
@@ -32,6 +38,10 @@
         --color_planned: #3a3f3c;
         --color_in_progress: #5a4a22;
         --color_done: #284a31;
+        --color_wood: #9c8a64;
+        --color_wood_edge: #7d6d4c;
+        --color_wood_text: #1b1710;
+        --color_glass: rgba(30, 37, 34, 0.92);
     }
 }
 
@@ -46,6 +56,22 @@ body {
     line-height: 1.5;
     background: var(--color_bg);
     color: var(--color_text);
+}
+
+/*
+ * Full-screen background photo (AVIF; all current browsers support it).
+ * A fixed pseudo-element is used instead of `background-attachment: fixed`,
+ * which iOS Safari ignores. The gradient on top tones the photo down so
+ * text outside the cards stays readable.
+ */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+        linear-gradient(var(--color_bg_overlay), var(--color_bg_overlay)),
+        url("/images/background.avif") center / cover no-repeat;
 }
 
 h1, h2 {
@@ -245,4 +271,272 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
 .status_in_progress { background: var(--color_in_progress); }
 .status_done { background: var(--color_done); }
 
-.back_link { align-self: flex-start; }
+.back_link {
+    align-self: flex-start;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: var(--color_surface);
+}
+
+/* -------------------------------------------------------------------------
+ * Project page: a four-sash wooden window (like the background photo).
+ * Mobile first: the sashes stack; from 720 px they form a 2 x 2 window.
+ * ---------------------------------------------------------------------- */
+
+.window {
+    /* Wider than the 760 px text column, but never wider than the screen. */
+    width: min(1000px, calc(100vw - 2 * var(--space)));
+    align-self: center;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 10px;
+    background: var(--color_wood);
+    border: 1px solid var(--color_wood_edge);
+    border-radius: 4px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+@media (min-width: 720px) {
+    .window {
+        grid-template-columns: 1fr 1fr;
+        /* Short top sashes, tall bottom sashes, as in the photo. */
+        grid-template-rows: auto minmax(420px, auto);
+    }
+}
+
+.sash {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0; /* lets long text wrap instead of widening the grid */
+    padding: 6px 8px 8px;
+    background: var(--color_wood);
+    border: 1px solid var(--color_wood_edge);
+    border-radius: 2px;
+    box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.25);
+}
+
+.sash_title {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color_wood_text);
+}
+
+.sash_body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.sash_body > .muted { color: var(--color_wood_text); }
+
+/* Two-by-two glass panes; the wooden gap between them is the mullion. */
+.pane_grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-rows: 1fr; /* all panes in a sash get the same height */
+    gap: 8px;
+}
+
+/* Contact panes stretch to fill the sash, level with the image sash. */
+.sash_contacts .pane_grid { flex: 1; }
+
+.pane {
+    min-width: 0;
+    padding: 10px;
+    background: var(--color_glass);
+    border: 1px solid var(--color_wood_edge);
+    border-radius: 2px;
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.15);
+    overflow-wrap: break-word; /* only splits words that cannot fit */
+}
+
+/* An empty pane is clear glass: the red wall shows through. */
+.pane_empty {
+    min-height: 110px;
+    /* Same photo as body::before, fixed to the viewport so it lines up. */
+    background:
+        linear-gradient(var(--color_bg_overlay), var(--color_bg_overlay)),
+        url("/images/background.avif") center / cover no-repeat fixed;
+}
+
+.pane_tall { flex: 1; }
+
+.pane_image {
+    display: block;
+    aspect-ratio: 4 / 3;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    font: inherit;
+    color: var(--color_text);
+}
+
+.pane_image img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.pane_image:hover { outline: 2px solid var(--color_primary); }
+
+.pane_contact p { margin: 2px 0 0; font-size: 0.9rem; }
+.pane_comment { color: var(--color_muted); white-space: pre-wrap; }
+
+.pane_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.pane_subtitle { margin: 16px 0 6px; font-size: 1rem; }
+
+.sash_hint { margin: 0; font-size: 0.875rem; }
+
+.sash_toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.button.small {
+    min-height: 36px;
+    padding: 4px 12px;
+    font-size: 0.9rem;
+    background: var(--color_glass);
+    color: var(--color_text);
+    border-color: var(--color_wood_edge);
+    display: inline-flex;
+    align-items: center;
+}
+
+.button.small.primary_small {
+    background: var(--color_primary);
+    color: var(--color_primary_text);
+    border-color: transparent;
+}
+
+.icon_button {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color_muted);
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.icon_button:hover { background: var(--color_border); color: var(--color_text); }
+
+/* Hidden visually but still reachable for screen readers and labels. */
+.visually_hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.visually_hidden:focus-visible + label {
+    outline: 2px solid var(--color_primary);
+    outline-offset: 2px;
+}
+
+.add_toggle {
+    background: var(--color_glass);
+    border: 1px solid var(--color_wood_edge);
+    border-radius: 2px;
+    padding: 6px 10px;
+}
+
+.pane .add_toggle { background: transparent; border-color: var(--color_border); }
+
+.add_toggle summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--color_primary);
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+}
+
+.add_toggle .form { margin-top: 4px; padding-bottom: 6px; }
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.item_list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.list_item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color_border);
+}
+
+.list_item:last-child { border-bottom: none; }
+.list_item > div { min-width: 0; }
+.list_item p { margin: 0; }
+
+.note_date { font-size: 0.8rem; }
+.note_body { white-space: pre-wrap; }
+
+.sash .form_message:empty { display: none; }
+
+/* Image viewer / gallery dialog */
+.image_dialog {
+    width: min(900px, calc(100vw - 2 * var(--space)));
+    max-height: calc(100vh - 2 * var(--space));
+    padding: 0;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--color_surface);
+    color: var(--color_text);
+}
+
+.image_dialog::backdrop { background: rgba(0, 0, 0, 0.75); }
+
+.dialog_content {
+    position: relative;
+    padding: 44px var(--space) var(--space);
+}
+
+.dialog_close {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+}
+
+.dialog_image {
+    display: block;
+    max-width: 100%;
+    max-height: 75vh;
+    margin: 0 auto;
+}
+
+.gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+}
