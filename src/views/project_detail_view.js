@@ -6,10 +6,12 @@
  *   | latest viewed    | contacts         |
  *   | images (2 x 2)   | (2 x 2)          |
  *   +------------------+------------------+
- *   | project info and | notes            |
- *   | measurements     |                  |
+ *   | shopping list    | notes            |
+ *   |                  |                  |
  *   +------------------+------------------+
  *
+ * The project name, status, type and last-updated date sit in the middle of the page
+ * header (components/header_title.js).
  * On narrow screens the sashes stack in that order (see main.css).
  * Each sash loads its own data and re-renders itself after a change, so
  * adding a note does not reload the images.
@@ -17,13 +19,14 @@
 
 import { el, replace_content } from "../components/dom.js";
 import { error_message } from "../components/messages.js";
-import { t, format_date, get_language } from "../i18n/i18n.js";
+import { t, format_date } from "../i18n/i18n.js";
+import { set_header_title } from "../components/header_title.js";
 import { get_project } from "../services/project_service.js";
 import { get_notes, create_note, delete_note } from "../services/note_service.js";
 import { get_contacts, create_contact, delete_contact } from "../services/contact_service.js";
 import {
-    get_measurements, create_measurement, delete_measurement, MEASUREMENT_UNITS,
-} from "../services/measurement_service.js";
+    get_shopping_items, create_shopping_item, delete_shopping_item,
+} from "../services/shopping_item_service.js";
 import {
     get_images, upload_image, get_signed_urls, mark_viewed,
 } from "../services/attachment_service.js";
@@ -60,14 +63,19 @@ export async function render_project_detail_view(container, params) {
     const dialog = create_dialog();
     const images_sash = create_sash("sash_images", t("images.title"));
     const contacts_sash = create_sash("sash_contacts", t("contacts.title"));
-    const info_sash = create_sash("sash_info", t(`project_type.${project.type}`));
+    const shopping_sash = create_sash("sash_shopping", t("shopping.title"));
     const notes_sash = create_sash("sash_notes", t("notes.title"));
+
+    set_header_title(project.name,
+        el("span", { class: `badge status_${project.status}` }, t(`project_status.${project.status}`)),
+        ` ${t(`project_type.${project.type}`)} · `,
+        t("projects.updated", { date: format_date(project.updated_at) }));
 
     replace_content(
         container,
         back_link,
         el("div", { class: "window" },
-            images_sash.element, contacts_sash.element, info_sash.element, notes_sash.element),
+            images_sash.element, contacts_sash.element, shopping_sash.element, notes_sash.element),
         dialog,
     );
 
@@ -78,8 +86,8 @@ export async function render_project_detail_view(container, params) {
     await Promise.all([
         render_images(images_sash.body, project.id, dialog),
         render_contacts(contacts_sash.body, project.id),
-        render_info(info_sash.body, project),
-        render_notes(notes_sash.body, project.id),
+        render_text_list(shopping_sash.body, project.id, SHOPPING_LIST, create_project_description(project)),
+        render_text_list(notes_sash.body, project.id, NOTES_LIST),
     ]);
 }
 
@@ -478,188 +486,88 @@ function create_contact_form(project_id, on_saved) {
 }
 
 /* ------------------------------------------------------------------------ */
-/* Bottom left: project info and measurements                                */
+/* Bottom row: shopping list (left) and notes (right)                        */
 /* ------------------------------------------------------------------------ */
 
+/*
+ * Notes and the shopping list work exactly the same way, so both are drawn
+ * by render_text_list(). Each list is described by a plain object; in C
+ * terms a struct holding the translation-key prefix, form settings and
+ * function pointers to the service calls.
+ */
+
+/** Shopping list in the bottom-left sash. */
+const SHOPPING_LIST = {
+    key: "shopping",
+    input_id: "shopping_body",
+    rows: 2,
+    max_length: 2000,
+    required_key: "errors.shopping_required",
+    load: get_shopping_items,
+    create: create_shopping_item,
+    remove: delete_shopping_item,
+};
+
+/** Notes in the bottom-right sash. */
+const NOTES_LIST = {
+    key: "notes",
+    input_id: "note_body",
+    rows: 4,
+    max_length: 20000,
+    required_key: "errors.note_required",
+    load: get_notes,
+    create: create_note,
+    remove: delete_note,
+};
+
 /**
- * @brief Show project name, status, description and measurements.
- * @param body Sash body element.
+ * @brief Build the project description shown above the shopping list.
+ *        Name, status, type and date are in the header instead.
  * @param project Project row.
- * @return Promise resolving when rendered.
+ * @return Element with the description, or null if there is none.
  */
-async function render_info(body, project) {
-    let measurements;
-    try {
-        measurements = await get_measurements(project.id);
-    } catch (error) {
-        show_sash_error(body, error);
-        return;
-    }
-
-    const message = el("p", { class: "form_message", role: "status" });
-    const refresh = () => render_info(body, project);
-
-    replace_content(body,
-        el("div", { class: "pane pane_tall" },
-            el("div", { class: "project_card_header" },
-                el("h1", {}, project.name),
-                el("span", { class: `badge status_${project.status}` },
-                    t(`project_status.${project.status}`)),
-            ),
-            el("p", { class: "muted" }, t("projects.updated", { date: format_date(project.updated_at) })),
-            project.description ? el("p", { class: "description" }, project.description) : null,
-
-            el("h3", { class: "pane_subtitle" }, t("measurements.title")),
-            measurements.length === 0
-                ? el("p", { class: "muted" }, t("measurements.empty"))
-                : el("ul", { class: "item_list" },
-                    measurements.map((m) => create_measurement_item(m, refresh,
-                        (text) => set_error(message, text)))),
-            message,
-            create_add_toggle(t("measurements.add"), create_measurement_form(project.id, refresh)),
-        ),
-    );
+function create_project_description(project) {
+    return project.description
+        ? el("div", { class: "project_facts" }, el("p", { class: "description" }, project.description))
+        : null;
 }
 
 /**
- * @brief Translate a unit code for display; unknown codes are shown as-is.
- * @param unit Unit code from the database, e.g. "m2".
- * @return Display text, e.g. "m²".
- */
-function unit_label(unit) {
-    return MEASUREMENT_UNITS.includes(unit) ? t(`unit.${unit}`) : unit;
-}
-
-/**
- * @brief Build one measurement list item.
- * @param measurement Measurement row.
- * @param on_deleted Function called after deleting.
- * @param on_error Function receiving an error message.
- * @return List item element.
- */
-function create_measurement_item(measurement, on_deleted, on_error) {
-    return el("li", { class: "list_item" },
-        el("div", {},
-            el("span", {}, `${measurement.label}: `),
-            el("strong", {}, `${format_number(measurement.value)} ${unit_label(measurement.unit)}`),
-            measurement.comment ? el("p", { class: "muted" }, measurement.comment) : null,
-        ),
-        create_delete_button(
-            t("measurements.delete"),
-            t("measurements.confirm_delete", { label: measurement.label }),
-            async () => { await delete_measurement(measurement.id); await on_deleted(); },
-            on_error,
-        ),
-    );
-}
-
-/**
- * @brief Format a number with the decimal separator of the UI language.
- * @param value Number (Postgres numeric arrives as a number or string).
- * @return Formatted string, e.g. "1,5" in Swedish.
- */
-function format_number(value) {
-    return get_language() === "sv"
-        ? String(value).replace(".", ",")
-        : String(value);
-}
-
-/**
- * @brief Build the "Add measurement" form.
- * @param project_id Project id.
- * @param on_saved Function called after saving.
- * @return Form element.
- */
-function create_measurement_form(project_id, on_saved) {
-    const label_input = el("input", { id: "measurement_label", maxlength: 200 });
-    // Text input with a decimal keyboard, so both "1.5" and "1,5" can be typed.
-    const value_input = el("input", { id: "measurement_value", inputmode: "decimal" });
-    const unit_select = el("select", { id: "measurement_unit" },
-        MEASUREMENT_UNITS.map((unit) => el("option", { value: unit, selected: unit === "cm" }, unit_label(unit))));
-    const comment_input = el("input", { id: "measurement_comment", maxlength: 2000 });
-    const message = el("p", { class: "form_message", role: "status" });
-    const submit_button = el("button", { type: "submit", class: "button primary" }, t("measurements.save"));
-
-    /**
-     * @brief Validate and save the measurement.
-     * @param event Submit event.
-     */
-    async function handle_submit(event) {
-        event.preventDefault();
-        const label = label_input.value.trim();
-        const value = Number(value_input.value.trim().replace(",", "."));
-        if (label.length === 0) {
-            set_error(message, t("errors.label_required"));
-            label_input.focus();
-            return;
-        }
-        if (value_input.value.trim() === "" || !Number.isFinite(value)) {
-            set_error(message, t("errors.value_required"));
-            value_input.focus();
-            return;
-        }
-        submit_button.disabled = true;
-        try {
-            await create_measurement(project_id, {
-                label, value, unit: unit_select.value, comment: comment_input.value.trim() || null,
-            });
-        } catch (error) {
-            set_error(message, error_message(error));
-            submit_button.disabled = false;
-            return;
-        }
-        await on_saved();
-    }
-
-    return el("form", { class: "form", on_submit: handle_submit },
-        create_field("measurement_label", t("measurements.label"), label_input),
-        el("div", { class: "form_row" },
-            create_field("measurement_value", t("measurements.value"), value_input),
-            create_field("measurement_unit", t("measurements.unit"), unit_select),
-        ),
-        create_field("measurement_comment", t("measurements.comment"), comment_input),
-        submit_button,
-        message,
-    );
-}
-
-/* ------------------------------------------------------------------------ */
-/* Bottom right: notes                                                       */
-/* ------------------------------------------------------------------------ */
-
-/**
- * @brief Load and show the project's notes, newest first.
+ * @brief Load and show a free-text list (notes or shopping list), newest first.
  * @param body Sash body element.
  * @param project_id Project id.
+ * @param list SHOPPING_LIST or NOTES_LIST.
+ * @param top Optional element shown above the list, or null.
  * @return Promise resolving when rendered.
  */
-async function render_notes(body, project_id) {
-    let notes;
+async function render_text_list(body, project_id, list, top = null) {
+    let items;
     try {
-        notes = await get_notes(project_id);
+        items = await list.load(project_id);
     } catch (error) {
         show_sash_error(body, error);
         return;
     }
 
     const message = el("p", { class: "form_message", role: "status" });
-    const refresh = () => render_notes(body, project_id);
+    const refresh = () => render_text_list(body, project_id, list, top);
 
     replace_content(body,
         el("div", { class: "pane pane_tall" },
-            create_add_toggle(t("notes.add"), create_note_form(project_id, refresh)),
+            top,
+            create_add_toggle(t(`${list.key}.add`), create_text_form(project_id, list, refresh)),
             message,
-            notes.length === 0
-                ? el("p", { class: "muted" }, t("notes.empty"))
-                : el("ul", { class: "item_list" }, notes.map((note) =>
+            items.length === 0
+                ? el("p", { class: "muted" }, t(`${list.key}.empty`))
+                : el("ul", { class: "item_list" }, items.map((item) =>
                     el("li", { class: "list_item" },
                         el("div", {},
-                            el("p", { class: "muted note_date" }, format_date(note.created_at)),
-                            el("p", { class: "note_body" }, note.body),
+                            el("p", { class: "muted note_date" }, format_date(item.created_at)),
+                            el("p", { class: "note_body" }, item.body),
                         ),
                         create_delete_button(
-                            t("notes.delete"), t("notes.confirm_delete"),
-                            async () => { await delete_note(note.id); await refresh(); },
+                            t(`${list.key}.delete`), t(`${list.key}.confirm_delete`),
+                            async () => { await list.remove(item.id); await refresh(); },
                             (text) => set_error(message, text),
                         ),
                     ))),
@@ -668,31 +576,32 @@ async function render_notes(body, project_id) {
 }
 
 /**
- * @brief Build the "Add note" form.
+ * @brief Build the "add" form for a free-text list.
  * @param project_id Project id.
+ * @param list SHOPPING_LIST or NOTES_LIST.
  * @param on_saved Function called after saving.
  * @return Form element.
  */
-function create_note_form(project_id, on_saved) {
-    const body_input = el("textarea", { id: "note_body", rows: 4, maxlength: 20000 });
+function create_text_form(project_id, list, on_saved) {
+    const body_input = el("textarea", { id: list.input_id, rows: list.rows, maxlength: list.max_length });
     const message = el("p", { class: "form_message", role: "status" });
-    const submit_button = el("button", { type: "submit", class: "button primary" }, t("notes.save"));
+    const submit_button = el("button", { type: "submit", class: "button primary" }, t(`${list.key}.save`));
 
     /**
-     * @brief Validate and save the note.
+     * @brief Validate and save the entry.
      * @param event Submit event.
      */
     async function handle_submit(event) {
         event.preventDefault();
         const text = body_input.value.trim();
         if (text.length === 0) {
-            set_error(message, t("errors.note_required"));
+            set_error(message, t(list.required_key));
             body_input.focus();
             return;
         }
         submit_button.disabled = true;
         try {
-            await create_note(project_id, text);
+            await list.create(project_id, text);
         } catch (error) {
             set_error(message, error_message(error));
             submit_button.disabled = false;
@@ -702,7 +611,7 @@ function create_note_form(project_id, on_saved) {
     }
 
     return el("form", { class: "form", on_submit: handle_submit },
-        create_field("note_body", t("notes.body"), body_input),
+        create_field(list.input_id, t(`${list.key}.body`), body_input),
         submit_button,
         message,
     );

@@ -7,6 +7,7 @@
 import "./styles/main.css";
 import { el, replace_content } from "./components/dom.js";
 import { create_language_switcher } from "./components/language_switcher.js";
+import { clear_header_title } from "./components/header_title.js";
 import { error_message } from "./components/messages.js";
 import { t, on_language_change } from "./i18n/i18n.js";
 import { add_route, current_path, match_route, navigate } from "./router.js";
@@ -27,7 +28,8 @@ add_route("/projects", () => render_project_list_view(app_container));
 add_route("/projects/:id", (params) => render_project_detail_view(app_container, params));
 
 /**
- * @brief Rebuild the header: language switcher, plus log out when logged in.
+ * @brief Rebuild the header: language switcher, plus log out when logged in,
+ *        and an empty centre title slot.
  */
 function render_header() {
     const log_out_button = current_session
@@ -35,6 +37,7 @@ function render_header() {
             t("auth.log_out"))
         : null;
     replace_content(header_actions, create_language_switcher(), log_out_button);
+    clear_header_title(); // the page being rendered sets it again if it wants one
 }
 
 /**
