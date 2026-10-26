@@ -48,6 +48,6 @@ export async function delete_note(note_id) {
     const { error } = await supabase
         .from("notes")
         .delete()
-        .eq("id", note_id);
+        .gte("id", note_id);
     if (error) throw error;
 }
