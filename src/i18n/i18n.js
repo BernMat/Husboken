@@ -127,7 +127,7 @@ export function on_language_change(listener) {
  * @return Localised date string, e.g. "16 okt. 2026" or "Oct 16, 2026".
  */
 export function format_date(value) {
-    const locale = current_language === "sv" ? "sv-SE" : "en-GB";
+    const locale = current_language === "sv" ? "sv-SE" : "en_GB";
     return new Date(value).toLocaleDateString(locale, {
         year: "numeric",
         month: "short",
