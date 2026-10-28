@@ -19,13 +19,12 @@ In scope:
 2. Projects: name, type (`garden_planning`, `gardening`, `renovation`, `building`),
    status (`planned`, `in_progress`, `done`), description, created/updated dates.
 3. Notes per project (free text).
-4. Measurements per project (label, value, unit, optional comment).
-5. Attachments per project: photos and drawings uploaded as image or PDF files,
+4. Attachments per project: photos and drawings uploaded as image or PDF files,
    shown in a gallery.
-6. Contacts per project (name, role, phone, email, comment).
-7. User-selectable UI language: Swedish or English (see "UI language" below).
-8. Responsive, mobile-friendly UI, installable as a PWA (add to home screen).
-9. Deployed to a public URL.
+5. Contacts per project (name, role, phone, email, comment).
+6. User-selectable UI language: Swedish or English (see "UI language" below).
+7. Responsive, mobile-friendly UI, installable as a PWA (add to home screen).
+8. Deployed to a public URL.
 
 Out of scope for now: in-browser drawing tool, sharing projects between users,
 full-text search, offline mode, native mobile apps.
