@@ -100,11 +100,14 @@ const CHILD_SERVICES = [
         name: "note_service", table: "notes", ascending: false,
         get: notes.get_notes, create: (id) => notes.create_note(id, "Text"),
         expected_insert: { project_id: 3, body: "Text" }, remove: notes.delete_note,
+        update: (id) => notes.update_note(id, "Ny text"), expected_update: { body: "Ny text" },
     },
     {
         name: "shopping_item_service", table: "shopping_items", ascending: false,
         get: shopping.get_shopping_items, create: (id) => shopping.create_shopping_item(id, "2 st gångjärn"),
         expected_insert: { project_id: 3, body: "2 st gångjärn" }, remove: shopping.delete_shopping_item,
+        update: (id) => shopping.update_shopping_item(id, "3 st gångjärn"),
+        expected_update: { body: "3 st gångjärn" },
     },
     {
         name: "contact_service", table: "contacts", ascending: true,
@@ -115,6 +118,10 @@ const CHILD_SERVICES = [
             phone: undefined, email: undefined, comment: undefined,
         },
         remove: contacts.delete_contact,
+        update: (id) => contacts.update_contact(id, { name: "Eva", phone: "070", extra: "x" }),
+        expected_update: {
+            name: "Eva", role: undefined, phone: "070", email: undefined, comment: undefined,
+        },
     },
 ];
 
@@ -141,6 +148,18 @@ for (const service of CHILD_SERVICES) {
             ]);
         });
 
+        it("updates only known fields by id and returns the row", async () => {
+            mock.queue_result({ data: { id: 9 }, error: null });
+            await expect(service.update(9)).resolves.toEqual({ id: 9 });
+            expect(mock.queries[0].table).toBe(service.table);
+            expect(calls_of()).toEqual([
+                ["update", service.expected_update],
+                ["eq", "id", 9],
+                ["select"],
+                ["single"],
+            ]);
+        });
+
         it("deletes by id", async () => {
             await service.remove(9);
             expect(calls_of()).toEqual([["delete"], ["eq", "id", 9]]);
@@ -150,8 +169,10 @@ for (const service of CHILD_SERVICES) {
             mock.queue_result({ data: null, error: DB_ERROR });
             mock.queue_result({ data: null, error: DB_ERROR });
             mock.queue_result({ data: null, error: DB_ERROR });
+            mock.queue_result({ data: null, error: DB_ERROR });
             await expect(service.get(3)).rejects.toBe(DB_ERROR);
             await expect(service.create(3)).rejects.toBe(DB_ERROR);
+            await expect(service.update(9)).rejects.toBe(DB_ERROR);
             await expect(service.remove(9)).rejects.toBe(DB_ERROR);
         });
     });

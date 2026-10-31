@@ -40,6 +40,24 @@ export async function create_shopping_item(project_id, body) {
 }
 
 /**
+ * @brief Change the text of a shopping list entry.
+ * @param item_id Entry id.
+ * @param body New entry text.
+ * @return Promise resolving to the updated entry.
+ * @throws Error if the update fails.
+ */
+export async function update_shopping_item(item_id, body) {
+    const { data, error } = await supabase
+        .from("shopping_items")
+        .update({ body })
+        .eq("id", item_id)
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+}
+
+/**
  * @brief Delete a shopping list entry.
  * @param item_id Entry id.
  * @return Promise resolving when deleted.

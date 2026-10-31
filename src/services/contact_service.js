@@ -46,6 +46,30 @@ export async function create_contact(project_id, contact) {
 }
 
 /**
+ * @brief Change a contact's details.
+ * @param contact_id Contact id.
+ * @param contact Object with name and optional role, phone, email, comment.
+ * @return Promise resolving to the updated contact.
+ * @throws Error if the update fails.
+ */
+export async function update_contact(contact_id, contact) {
+    const { data, error } = await supabase
+        .from("contacts")
+        .update({
+            name: contact.name,
+            role: contact.role,
+            phone: contact.phone,
+            email: contact.email,
+            comment: contact.comment,
+        })
+        .eq("id", contact_id)
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+}
+
+/**
  * @brief Delete a contact.
  * @param contact_id Contact id.
  * @return Promise resolving when deleted.
