@@ -14,7 +14,8 @@
  * header (components/header_title.js).
  * On narrow screens the sashes stack in that order (see main.css).
  * Each sash loads its own data and re-renders itself after a change, so
- * adding a note does not reload the images.
+ * adding a note does not reload the images. Contacts are edited in the modal
+ * dialog; notes and shopping list entries are edited in place.
  */
 
 import { el, replace_content } from "../components/dom.js";
@@ -22,10 +23,12 @@ import { error_message } from "../components/messages.js";
 import { t, format_date } from "../i18n/i18n.js";
 import { set_header_title } from "../components/header_title.js";
 import { get_project } from "../services/project_service.js";
-import { get_notes, create_note, delete_note } from "../services/note_service.js";
-import { get_contacts, create_contact, delete_contact } from "../services/contact_service.js";
+import { get_notes, create_note, update_note, delete_note } from "../services/note_service.js";
 import {
-    get_shopping_items, create_shopping_item, delete_shopping_item,
+    get_contacts, create_contact, update_contact, delete_contact,
+} from "../services/contact_service.js";
+import {
+    get_shopping_items, create_shopping_item, update_shopping_item, delete_shopping_item,
 } from "../services/shopping_item_service.js";
 import {
     get_images, upload_image, get_signed_urls, mark_viewed,
@@ -85,7 +88,7 @@ export async function render_project_detail_view(container, params) {
      */
     await Promise.all([
         render_images(images_sash.body, project.id, dialog),
-        render_contacts(contacts_sash.body, project.id),
+        render_contacts(contacts_sash.body, project.id, dialog),
         render_text_list(shopping_sash.body, project.id, SHOPPING_LIST, create_project_description(project)),
         render_text_list(notes_sash.body, project.id, NOTES_LIST),
     ]);
@@ -171,6 +174,18 @@ function create_delete_button(label, confirm_text, on_confirm, on_error) {
     return el("button", {
         type: "button", class: "icon_button", "aria-label": label, title: label, on_click: handle_click,
     }, "×");
+}
+
+/**
+ * @brief Build a small "✎" edit button.
+ * @param label Accessible label, e.g. "Edit note".
+ * @param on_click Function called when clicked.
+ * @return Button element.
+ */
+function create_edit_button(label, on_click) {
+    return el("button", {
+        type: "button", class: "icon_button", "aria-label": label, title: label, on_click,
+    }, "✎");
 }
 
 /**
@@ -369,9 +384,10 @@ function create_upload_button(project_id, message, on_uploaded) {
  * @brief Load and show the project's contacts, one per pane.
  * @param body Sash body element.
  * @param project_id Project id.
+ * @param dialog Dialog used for the edit form.
  * @return Promise resolving when rendered.
  */
-async function render_contacts(body, project_id) {
+async function render_contacts(body, project_id, dialog) {
     let contacts;
     try {
         contacts = await get_contacts(project_id);
@@ -381,8 +397,19 @@ async function render_contacts(body, project_id) {
     }
 
     const message = el("p", { class: "form_message", role: "status" });
-    const refresh = () => render_contacts(body, project_id);
+    const refresh = () => render_contacts(body, project_id, dialog);
     const show_error = (text) => set_error(message, text);
+
+    /**
+     * @brief Open the edit form for a contact in the dialog.
+     * @param contact Contact row.
+     */
+    function edit_contact(contact) {
+        open_dialog(dialog,
+            el("h2", {}, t("contacts.edit")),
+            create_contact_form(project_id, async () => { dialog.close(); await refresh(); }, contact),
+        );
+    }
 
     // At least four panes; beyond that, round up to whole rows of two.
     const pane_count = Math.max(CONTACT_PANES, contacts.length + (contacts.length % 2));
@@ -390,7 +417,7 @@ async function render_contacts(body, project_id) {
     for (let i = 0; i < pane_count; i++) {
         const contact = contacts[i];
         panes.push(contact
-            ? create_contact_pane(contact, refresh, show_error)
+            ? create_contact_pane(contact, edit_contact, refresh, show_error)
             : el("div", { class: "pane pane_empty" }));
     }
 
@@ -405,19 +432,23 @@ async function render_contacts(body, project_id) {
 /**
  * @brief Build one contact pane with clickable phone and email.
  * @param contact Contact row.
+ * @param on_edit Function (contact) called when the edit button is clicked.
  * @param on_deleted Function called after the contact is deleted.
  * @param on_error Function receiving an error message.
  * @return Pane element.
  */
-function create_contact_pane(contact, on_deleted, on_error) {
+function create_contact_pane(contact, on_edit, on_deleted, on_error) {
     return el("article", { class: "pane pane_contact" },
         el("div", { class: "pane_header" },
             el("strong", {}, contact.name),
-            create_delete_button(
-                t("contacts.delete"),
-                t("contacts.confirm_delete", { name: contact.name }),
-                async () => { await delete_contact(contact.id); await on_deleted(); },
-                on_error,
+            el("div", { class: "item_actions" },
+                create_edit_button(t("contacts.edit"), () => on_edit(contact)),
+                create_delete_button(
+                    t("contacts.delete"),
+                    t("contacts.confirm_delete", { name: contact.name }),
+                    async () => { await delete_contact(contact.id); await on_deleted(); },
+                    on_error,
+                ),
             ),
         ),
         contact.role ? el("p", { class: "muted" }, contact.role) : null,
@@ -429,17 +460,29 @@ function create_contact_pane(contact, on_deleted, on_error) {
 }
 
 /**
- * @brief Build the "Add contact" form.
+ * @brief Build the contact form: empty for "Add contact", or filled in with
+ *        an existing contact's details for editing.
  * @param project_id Project id.
  * @param on_saved Function called after the contact is saved.
+ * @param contact Contact row to edit, or null to add a new contact.
  * @return Form element.
  */
-function create_contact_form(project_id, on_saved) {
-    const name_input = el("input", { id: "contact_name", maxlength: 200, autocomplete: "off" });
-    const role_input = el("input", { id: "contact_role", maxlength: 200 });
-    const phone_input = el("input", { id: "contact_phone", type: "tel", maxlength: 50 });
-    const email_input = el("input", { id: "contact_email", type: "email", maxlength: 320 });
-    const comment_input = el("textarea", { id: "contact_comment", rows: 2, maxlength: 2000 });
+function create_contact_form(project_id, on_saved, contact = null) {
+    // Distinct ids so the add form and the edit dialog can exist at the same time.
+    const prefix = contact ? "contact_edit" : "contact";
+    // "?." gives undefined instead of throwing when contact is null; el() skips undefined.
+    const name_input = el("input", {
+        id: `${prefix}_name`, maxlength: 200, autocomplete: "off", value: contact?.name,
+    });
+    const role_input = el("input", { id: `${prefix}_role`, maxlength: 200, value: contact?.role });
+    const phone_input = el("input", {
+        id: `${prefix}_phone`, type: "tel", maxlength: 50, value: contact?.phone,
+    });
+    const email_input = el("input", {
+        id: `${prefix}_email`, type: "email", maxlength: 320, value: contact?.email,
+    });
+    const comment_input = el("textarea", { id: `${prefix}_comment`, rows: 2, maxlength: 2000 },
+        contact?.comment);
     const message = el("p", { class: "form_message", role: "status" });
     const submit_button = el("button", { type: "submit", class: "button primary" }, t("contacts.save"));
 
@@ -455,15 +498,20 @@ function create_contact_form(project_id, on_saved) {
             name_input.focus();
             return;
         }
+        const fields = {
+            name,
+            role: role_input.value.trim() || null,
+            phone: phone_input.value.trim() || null,
+            email: email_input.value.trim() || null,
+            comment: comment_input.value.trim() || null,
+        };
         submit_button.disabled = true;
         try {
-            await create_contact(project_id, {
-                name,
-                role: role_input.value.trim() || null,
-                phone: phone_input.value.trim() || null,
-                email: email_input.value.trim() || null,
-                comment: comment_input.value.trim() || null,
-            });
+            if (contact) {
+                await update_contact(contact.id, fields);
+            } else {
+                await create_contact(project_id, fields);
+            }
         } catch (error) {
             set_error(message, error_message(error));
             submit_button.disabled = false;
@@ -473,13 +521,13 @@ function create_contact_form(project_id, on_saved) {
     }
 
     return el("form", { class: "form", on_submit: handle_submit },
-        create_field("contact_name", t("contacts.name"), name_input),
-        create_field("contact_role", t("contacts.role"), role_input),
+        create_field(`${prefix}_name`, t("contacts.name"), name_input),
+        create_field(`${prefix}_role`, t("contacts.role"), role_input),
         el("div", { class: "form_row" },
-            create_field("contact_phone", t("contacts.phone"), phone_input),
-            create_field("contact_email", t("contacts.email"), email_input),
+            create_field(`${prefix}_phone`, t("contacts.phone"), phone_input),
+            create_field(`${prefix}_email`, t("contacts.email"), email_input),
         ),
-        create_field("contact_comment", t("contacts.comment"), comment_input),
+        create_field(`${prefix}_comment`, t("contacts.comment"), comment_input),
         submit_button,
         message,
     );
@@ -505,6 +553,7 @@ const SHOPPING_LIST = {
     required_key: "errors.shopping_required",
     load: get_shopping_items,
     create: create_shopping_item,
+    update: update_shopping_item,
     remove: delete_shopping_item,
 };
 
@@ -517,6 +566,7 @@ const NOTES_LIST = {
     required_key: "errors.note_required",
     load: get_notes,
     create: create_note,
+    update: update_note,
     remove: delete_note,
 };
 
@@ -552,6 +602,50 @@ async function render_text_list(body, project_id, list, top = null) {
     const message = el("p", { class: "form_message", role: "status" });
     const refresh = () => render_text_list(body, project_id, list, top);
 
+    /**
+     * @brief Fill a list row with the entry's date, text and buttons.
+     * @param row List item element.
+     * @param item Entry row.
+     */
+    function show_item(row, item) {
+        replace_content(row,
+            el("div", {},
+                el("p", { class: "muted note_date" }, format_date(item.created_at)),
+                el("p", { class: "note_body" }, item.body),
+            ),
+            el("div", { class: "item_actions" },
+                create_edit_button(t(`${list.key}.edit`), () => edit_item(row, item)),
+                create_delete_button(
+                    t(`${list.key}.delete`), t(`${list.key}.confirm_delete`),
+                    async () => { await list.remove(item.id); await refresh(); },
+                    (text) => set_error(message, text),
+                ),
+            ),
+        );
+    }
+
+    /**
+     * @brief Replace a list row with an edit form for the entry.
+     * @param row List item element.
+     * @param item Entry row.
+     */
+    function edit_item(row, item) {
+        const form = create_text_form(project_id, list, refresh, item, () => show_item(row, item));
+        replace_content(row, form);
+        form.querySelector("textarea").focus();
+    }
+
+    /**
+     * @brief Build one list row.
+     * @param item Entry row.
+     * @return List item element.
+     */
+    function create_item_row(item) {
+        const row = el("li", { class: "list_item" });
+        show_item(row, item);
+        return row;
+    }
+
     replace_content(body,
         el("div", { class: "pane pane_tall" },
             top,
@@ -559,33 +653,28 @@ async function render_text_list(body, project_id, list, top = null) {
             message,
             items.length === 0
                 ? el("p", { class: "muted" }, t(`${list.key}.empty`))
-                : el("ul", { class: "item_list" }, items.map((item) =>
-                    el("li", { class: "list_item" },
-                        el("div", {},
-                            el("p", { class: "muted note_date" }, format_date(item.created_at)),
-                            el("p", { class: "note_body" }, item.body),
-                        ),
-                        create_delete_button(
-                            t(`${list.key}.delete`), t(`${list.key}.confirm_delete`),
-                            async () => { await list.remove(item.id); await refresh(); },
-                            (text) => set_error(message, text),
-                        ),
-                    ))),
+                : el("ul", { class: "item_list" }, items.map(create_item_row)),
         ),
     );
 }
 
 /**
- * @brief Build the "add" form for a free-text list.
+ * @brief Build the form for a free-text list: empty for adding an entry, or
+ *        filled in with an existing entry for editing.
  * @param project_id Project id.
  * @param list SHOPPING_LIST or NOTES_LIST.
  * @param on_saved Function called after saving.
+ * @param item Entry to edit, or null to add a new entry.
+ * @param on_cancel Function called when editing is cancelled (edit mode only).
  * @return Form element.
  */
-function create_text_form(project_id, list, on_saved) {
-    const body_input = el("textarea", { id: list.input_id, rows: list.rows, maxlength: list.max_length });
+function create_text_form(project_id, list, on_saved, item = null, on_cancel = null) {
+    const input_id = item ? `${list.input_id}_${item.id}` : list.input_id;
+    const body_input = el("textarea", { id: input_id, rows: list.rows, maxlength: list.max_length },
+        item?.body);
     const message = el("p", { class: "form_message", role: "status" });
-    const submit_button = el("button", { type: "submit", class: "button primary" }, t(`${list.key}.save`));
+    const submit_button = el("button", { type: "submit", class: "button primary" },
+        item ? t("common.save") : t(`${list.key}.save`));
 
     /**
      * @brief Validate and save the entry.
@@ -601,7 +690,11 @@ function create_text_form(project_id, list, on_saved) {
         }
         submit_button.disabled = true;
         try {
-            await list.create(project_id, text);
+            if (item) {
+                await list.update(item.id, text);
+            } else {
+                await list.create(project_id, text);
+            }
         } catch (error) {
             set_error(message, error_message(error));
             submit_button.disabled = false;
@@ -611,8 +704,13 @@ function create_text_form(project_id, list, on_saved) {
     }
 
     return el("form", { class: "form", on_submit: handle_submit },
-        create_field(list.input_id, t(`${list.key}.body`), body_input),
-        submit_button,
+        create_field(input_id, t(`${list.key}.body`), body_input),
+        item
+            ? el("div", { class: "form_buttons" },
+                submit_button,
+                el("button", { type: "button", class: "button secondary", on_click: on_cancel },
+                    t("common.cancel")))
+            : submit_button,
         message,
     );
 }

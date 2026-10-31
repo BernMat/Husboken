@@ -51,6 +51,7 @@ export default {
     "contacts.email": "Email",
     "contacts.comment": "Comment",
     "contacts.save": "Save contact",
+    "contacts.edit": "Edit contact",
     "contacts.delete": "Remove contact",
     "contacts.confirm_delete": "Remove {name}?",
 
@@ -59,6 +60,7 @@ export default {
     "shopping.add": "Add to list",
     "shopping.body": "What to buy",
     "shopping.save": "Add",
+    "shopping.edit": "Edit item",
     "shopping.delete": "Remove from list",
     "shopping.confirm_delete": "Remove this from the shopping list?",
 
@@ -67,6 +69,7 @@ export default {
     "notes.add": "Add note",
     "notes.body": "Note",
     "notes.save": "Save note",
+    "notes.edit": "Edit note",
     "notes.delete": "Delete note",
     "notes.confirm_delete": "Delete this note?",
 
@@ -81,6 +84,8 @@ export default {
 
     "common.loading": "Loading…",
     "common.close": "Close",
+    "common.save": "Save",
+    "common.cancel": "Cancel",
     "common.page_not_found": "Page not found.",
 
     "errors.generic": "Something went wrong. Please try again.",

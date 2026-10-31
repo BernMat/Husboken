@@ -51,6 +51,7 @@ export default {
     "contacts.email": "E-post",
     "contacts.comment": "Kommentar",
     "contacts.save": "Spara kontakt",
+    "contacts.edit": "Redigera kontakt",
     "contacts.delete": "Ta bort kontakt",
     "contacts.confirm_delete": "Ta bort {name}?",
 
@@ -59,6 +60,7 @@ export default {
     "shopping.add": "Lägg till på listan",
     "shopping.body": "Vad ska köpas",
     "shopping.save": "Lägg till",
+    "shopping.edit": "Ändra rad",
     "shopping.delete": "Ta bort från listan",
     "shopping.confirm_delete": "Ta bort från inköpslistan?",
 
@@ -67,6 +69,7 @@ export default {
     "notes.add": "Lägg till anteckning",
     "notes.body": "Anteckning",
     "notes.save": "Spara anteckning",
+    "notes.edit": "Redigera anteckning",
     "notes.delete": "Ta bort anteckning",
     "notes.confirm_delete": "Ta bort anteckningen?",
 
@@ -81,6 +84,8 @@ export default {
 
     "common.loading": "Laddar…",
     "common.close": "Stäng",
+    "common.save": "Spara",
+    "common.cancel": "Avbryt",
     "common.page_not_found": "Sidan finns inte.",
 
     "errors.generic": "Något gick fel. Försök igen.",

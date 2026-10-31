@@ -39,6 +39,24 @@ export async function create_note(project_id, body) {
 }
 
 /**
+ * @brief Change the text of a note.
+ * @param note_id Note id.
+ * @param body New note text.
+ * @return Promise resolving to the updated note.
+ * @throws Error if the update fails.
+ */
+export async function update_note(note_id, body) {
+    const { data, error } = await supabase
+        .from("notes")
+        .update({ body })
+        .eq("id", note_id)
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+}
+
+/**
  * @brief Delete a note.
  * @param note_id Note id.
  * @return Promise resolving when deleted.
