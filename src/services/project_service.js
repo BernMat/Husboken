@@ -7,6 +7,7 @@
  */
 
 import { supabase } from "../supabase_client.js";
+import { delete_project_files } from "./attachment_service.js";
 
 /** Allowed values for projects.type (must match the database check constraint). */
 export const PROJECT_TYPES = ["garden_planning", "gardening", "renovation", "building"];
@@ -89,13 +90,19 @@ export async function update_project(project_id, changes) {
 }
 
 /**
- * @brief Delete a project. Notes, measurements, contacts and attachment rows
- *        are removed by ON DELETE CASCADE in the database.
+ * @brief Delete a project and its files.
+ *
+ * The files in Storage are removed first, since the database cannot do it.
+ * Then the project row is deleted; notes, measurements, contacts, shopping
+ * items and attachment rows follow by ON DELETE CASCADE. If removing the
+ * files fails, the project is left in place.
+ *
  * @param project_id Project id.
  * @return Promise resolving when deleted.
- * @throws Error if the delete fails.
+ * @throws Error if removing the files or deleting the project fails.
  */
 export async function delete_project(project_id) {
+    await delete_project_files(project_id);
     const { error } = await supabase
         .from("projects")
         .delete()

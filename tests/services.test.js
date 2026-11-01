@@ -78,11 +78,31 @@ describe("project_service", () => {
     });
 
     it("update_project() and delete_project() target the given id", async () => {
+        mock.queue_result({ data: { id: 7 }, error: null }); // update
+        mock.queue_result({ data: [], error: null });        // attachment files
         await projects.update_project(7, { status: "done" });
         await projects.delete_project(8);
         expect(calls_of(0)).toContainEqual(["update", { status: "done" }]);
         expect(calls_of(0)).toContainEqual(["eq", "id", 7]);
+        expect(calls_of(2)).toEqual([["delete"], ["eq", "id", 8]]);
+    });
+
+    it("delete_project() removes the project's files before the row", async () => {
+        mock.queue_result({ data: [{ storage_path: "u/8/a.jpg" }, { storage_path: "u/8/b.pdf" }], error: null });
+        await projects.delete_project(8);
+        expect(mock.queries[0].table).toBe("attachments");
+        expect(calls_of(0)).toEqual([["select", "storage_path"], ["eq", "project_id", 8]]);
+        expect(mock.storage_bucket.remove).toHaveBeenCalledWith(["u/8/a.jpg", "u/8/b.pdf"]);
+        expect(mock.queries[1].table).toBe("projects");
         expect(calls_of(1)).toEqual([["delete"], ["eq", "id", 8]]);
+    });
+
+    it("delete_project() keeps the project if its files cannot be removed", async () => {
+        const remove_error = { message: "storage down" };
+        mock.queue_result({ data: [{ storage_path: "u/8/a.jpg" }], error: null });
+        mock.storage_bucket.remove.mockResolvedValueOnce({ data: null, error: remove_error });
+        await expect(projects.delete_project(8)).rejects.toBe(remove_error);
+        expect(mock.queries).toHaveLength(1);
     });
 
     it("exports the codes allowed by the database", () => {
@@ -291,6 +311,21 @@ describe("attachment_service", () => {
         ]);
         expect(mock.storage_bucket.createSignedUrls).toHaveBeenCalledWith(["u/1/a.jpg", "u/1/b.jpg"], 3600);
         expect([...urls]).toEqual([["u/1/a.jpg", "https://x/a"]]);
+    });
+
+    it("delete_project_files() skips Storage when there are no files", async () => {
+        mock.queue_result({ data: [], error: null });
+        await attachments.delete_project_files(4);
+        expect(mock.storage_bucket.remove).not.toHaveBeenCalled();
+    });
+
+    it("delete_project_files() removes at most 1000 files per request", async () => {
+        const rows = Array.from({ length: 1001 }, (_, i) => ({ storage_path: `u/4/${i}.jpg` }));
+        mock.queue_result({ data: rows, error: null });
+        await attachments.delete_project_files(4);
+        expect(mock.storage_bucket.remove).toHaveBeenCalledTimes(2);
+        expect(mock.storage_bucket.remove.mock.calls[0][0]).toHaveLength(1000);
+        expect(mock.storage_bucket.remove.mock.calls[1][0]).toEqual(["u/4/1000.jpg"]);
     });
 
     it("mark_viewed() only updates last_viewed_at", async () => {
