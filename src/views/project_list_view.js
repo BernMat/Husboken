@@ -33,7 +33,7 @@ export async function render_project_list_view(container) {
         projects.length === 0
             ? el("p", { class: "muted" }, t("projects.empty"))
             : el("ul", { class: "project_list" }, projects.map(create_project_item)),
-        create_new_project_form(container),
+        create_new_project_form(),
     );
 }
 
@@ -71,10 +71,9 @@ function create_select(id, values, label_prefix) {
 
 /**
  * @brief Build the "New project" form.
- * @param container Page container, re-rendered after a project is created.
  * @return Section element containing the form.
  */
-function create_new_project_form(container) {
+function create_new_project_form() {
     const name_input = el("input", { id: "project_name", name: "name", maxlength: 200 });
     const type_select = create_select("project_type", PROJECT_TYPES, "project_type");
     const status_select = create_select("project_status", PROJECT_STATUSES, "project_status");

@@ -1,0 +1,86 @@
+# CI/CD for Husboken.
+#
+# - Every pull request against main and every push to main runs lint, unit
+#   tests and a production build. Any failing step stops the run.
+# - A push to main that passes all checks is deployed to Vercel production.
+#
+# Secrets (Settings -> Secrets and variables -> Actions, environment "production"):
+#   VERCEL_TOKEN       Vercel access token
+#   VERCEL_ORG_ID      "orgId" from .vercel/project.json (npx vercel link)
+#   VERCEL_PROJECT_ID  "projectId" from .vercel/project.json
+# The Supabase URL and anon key stay in the Vercel project settings and are
+# fetched by "vercel pull"; they are not needed in GitHub.
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# The workflow may only read the repository, never write to it.
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its older run. Runs on main are never
+# cancelled, so a deploy is not interrupted halfway.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: Lint, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  deploy:
+    name: Deploy to Vercel (production)
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@63.1.2
+
+      - name: Pull Vercel project settings and environment variables
+        run: vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Build for production
+        run: vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Deploy to production
+        run: vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"
