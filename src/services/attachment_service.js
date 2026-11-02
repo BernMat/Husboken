@@ -15,6 +15,9 @@ const BUCKET = "attachments";
 /** How long a signed image URL stays valid, in seconds. */
 const SIGNED_URL_SECONDS = 60 * 60;
 
+/** Most files Storage removes in one request. */
+const REMOVE_BATCH_SIZE = 1000;
+
 /**
  * @brief Fetch all image attachments for a project, most recently viewed
  *        first. Images never viewed come after, newest upload first.
@@ -97,6 +100,33 @@ export async function get_signed_urls(attachments) {
         }
     }
     return urls;
+}
+
+/**
+ * @brief Remove all of a project's files from Storage.
+ *
+ * Deleting a project removes its attachment rows by ON DELETE CASCADE, but
+ * the database cannot remove the files themselves, so this must be called
+ * before the project row is deleted. The rows are only read here.
+ *
+ * @param project_id Project id.
+ * @return Promise resolving when all files are removed.
+ * @throws Error if the query or a Storage request fails.
+ */
+export async function delete_project_files(project_id) {
+    const { data, error } = await supabase
+        .from("attachments")
+        .select("storage_path")
+        .eq("project_id", project_id);
+    if (error) throw error;
+
+    const paths = data.map((a) => a.storage_path);
+    for (let start = 0; start < paths.length; start += REMOVE_BATCH_SIZE) {
+        const { error: remove_error } = await supabase.storage
+            .from(BUCKET)
+            .remove(paths.slice(start, start + REMOVE_BATCH_SIZE));
+        if (remove_error) throw remove_error;
+    }
 }
 
 /**
