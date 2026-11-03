@@ -1,3 +1,5 @@
+
+[![CodeQL](https://github.com/BernMat/Husboken/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/BernMat/Husboken/actions/workflows/github-code-scanning/codeql)
 # Husboken
 
 Keep track of your home projects (garden planning, gardening, renovation and
